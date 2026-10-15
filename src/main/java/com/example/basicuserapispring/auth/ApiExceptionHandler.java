@@ -1,5 +1,6 @@
 package com.example.basicuserapispring.auth;
 
+import com.example.basicuserapispring.exception.ApiException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -9,9 +10,17 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(ApiException.class)
+    ProblemDetail business(ApiException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason());
+        problem.setProperty("code", exception.getCode());
+        return problem;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail validation(MethodArgumentNotValidException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request fields");
+        problem.setProperty("code", "VALIDATION_ERROR");
         problem.setProperty("errors", exception.getBindingResult().getFieldErrors().stream()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage()).toList());
         return problem;
@@ -24,6 +33,8 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail conflict() {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "User conflicts with an existing record");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "User conflicts with an existing record");
+        problem.setProperty("code", "USER_CONFLICT");
+        return problem;
     }
 }

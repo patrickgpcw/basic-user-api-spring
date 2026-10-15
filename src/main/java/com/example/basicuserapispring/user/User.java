@@ -27,6 +27,13 @@ public class User {
         this.telephone = telephone;
         this.passwordHash = passwordHash;
     }
+    public void updateProfile(String firstName, String lastName, String email, String telephone) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.email = email;
+        this.telephone = telephone;
+    }
+
     public Long getId() { return id; }
     public String getFirstName() { return firstName; }
     public String getLastName() { return lastName; }

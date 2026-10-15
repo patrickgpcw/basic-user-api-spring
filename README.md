@@ -56,6 +56,8 @@ Cadastro e login são públicos. A documentação indica o cadeado apenas no end
 | POST | `/api/users` | Público: cadastro |
 | POST | `/api/login` | Público: login |
 | GET | `/api/users/me` | JWT: usuário autenticado |
+| PUT | `/api/users/me` | JWT: atualizar o próprio perfil |
+| DELETE | `/api/users/me` | JWT: excluir a própria conta |
 
 Cadastro:
 
@@ -106,4 +108,20 @@ O relatório HTML fica em `build/reports/tests/test/index.html`.
 
 Os testes de integração ativam explicitamente o profile `test`, com H2 em memória no modo PostgreSQL, executando as mesmas migrations. Não precisam de Docker nem de variáveis locais. H2 é dependência exclusiva de testes; diferenças específicas do PostgreSQL devem ser validadas no banco real.
 
-O CRUD completo de usuários do exemplo antigo fica para a próxima etapa.
+## Atualizar ou excluir a própria conta
+
+`PUT /api/users/me` substitui o perfil. Envie `firstName`, `lastName` e `email`; `telephone` é opcional e será limpo quando omitido. A senha não é alterada por essa operação. O e-mail é normalizado e não pode pertencer a outra conta.
+
+```sh
+curl -X PUT http://localhost:8080/api/users/me \
+  -H 'Authorization: Bearer SEU_TOKEN' -H 'Content-Type: application/json' \
+  -d '{"firstName":"Patrick","lastName":"Pessanha","email":"patrick@example.com","telephone":"+5511999999999"}'
+
+curl -X DELETE http://localhost:8080/api/users/me -H 'Authorization: Bearer SEU_TOKEN'
+```
+
+A exclusão é definitiva e retorna `204` sem corpo. O JWT identifica a conta em todas essas operações; não existe rota de alteração/exclusão por ID. Após excluir a conta, o token anterior recebe `401` nas operações de perfil.
+
+Exceptions customizadas retornam Problem Details com um campo `code`: `EMAIL_ALREADY_REGISTERED` (409), `INVALID_CREDENTIALS` (401), `CURRENT_USER_UNAVAILABLE` (401). Validações retornam `VALIDATION_ERROR` (400) e a lista de campos inválidos; conflitos detectados pelo banco retornam `USER_CONFLICT` (409), sem expor SQL.
+
+`UserProfileIntegrationTests` cobre atualização, exclusão, validação, duplicidade de e-mail, preservação da senha, isolamento entre contas e rejeição do token após exclusão.
