@@ -55,6 +55,8 @@ Cadastro e login são públicos. A documentação indica o cadeado apenas no end
 | --- | --- | --- |
 | POST | `/api/users` | Público: cadastro |
 | POST | `/api/login` | Público: login |
+| POST | `/api/refresh` | Refresh token: renovar tokens |
+| POST | `/api/logout` | JWT: encerrar a sessão atual |
 | GET | `/api/users/me` | JWT: usuário autenticado |
 | PUT | `/api/users/me` | JWT: atualizar o próprio perfil |
 | DELETE | `/api/users/me` | JWT: excluir a própria conta |
@@ -81,7 +83,7 @@ Use o `accessToken` retornado:
 curl http://localhost:8080/api/users/me -H 'Authorization: Bearer SEU_TOKEN'
 ```
 
-O token expira em uma hora. Nesta etapa não há refresh ou revogação de tokens. DTOs de saída não incluem senha nem hash; entradas são validadas e senhas usam PBKDF2 com salt. E-mails são normalizados para minúsculas e têm restrição única no banco. A autenticação usa exclusivamente o header Bearer e não cria sessão/cookie.
+O access token expira em uma hora. Cada login cria uma sessão com refresh token válido por até sete dias, com rotação a cada uso. O logout revoga imediatamente todos os tokens da sessão atual. DTOs de saída não incluem senha nem hash; entradas são validadas e senhas usam PBKDF2 com salt. E-mails são normalizados para minúsculas e têm restrição única no banco. A autenticação das rotas protegidas usa o header Bearer. A API não usa cookies nem HttpSession; mantém sessões de autenticação no banco para revogação.
 
 Respostas: `201` cadastro, `200` login/consulta, `400` validação, `401` credenciais/token inválidos e `409` e-mail duplicado. Erros de validação e negócio usam Problem Details.
 
@@ -125,3 +127,26 @@ A exclusão é definitiva e retorna `204` sem corpo. O JWT identifica a conta em
 Exceptions customizadas retornam Problem Details com um campo `code`: `EMAIL_ALREADY_REGISTERED` (409), `INVALID_CREDENTIALS` (401), `CURRENT_USER_UNAVAILABLE` (401). Validações retornam `VALIDATION_ERROR` (400) e a lista de campos inválidos; conflitos detectados pelo banco retornam `USER_CONFLICT` (409), sem expor SQL.
 
 `UserProfileIntegrationTests` cobre atualização, exclusão, validação, duplicidade de e-mail, preservação da senha, isolamento entre contas e rejeição do token após exclusão.
+
+## Refresh token e logout
+
+O login retorna `accessToken`, `tokenType`, `expiresIn`, `refreshToken` e `refreshExpiresIn` (durações em segundos). Guarde os tokens como segredos. A renovação não exige access token; envie apenas o refresh token no corpo, inclusive quando o access token já expirou:
+
+```sh
+curl -X POST http://localhost:8080/api/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refreshToken":"SEU_REFRESH_TOKEN"}'
+
+curl -X POST http://localhost:8080/api/logout \
+  -H 'Authorization: Bearer SEU_ACCESS_TOKEN'
+```
+
+Substitua ambos os tokens pelos novos valores após cada renovação. O refresh anterior deixa de funcionar; duas renovações simultâneas com o mesmo token produzem apenas um sucesso. O prazo da sessão é absoluto (sete dias desde o login), não é estendido pela renovação. `security.jwt.ttl` e `security.refresh.ttl` configuram as durações.
+
+O refresh token contém um identificador de sessão e 32 bytes aleatórios. Somente seu hash SHA-256 é persistido. Tokens inválidos, expirados, revogados ou já utilizados recebem `401` com `code: INVALID_REFRESH_TOKEN`. Reutilização rejeita o token antigo, sem revogar automaticamente o substituto válido.
+
+Logout retorna `204` e afeta apenas a sessão indicada pelo JWT, preservando logins de outros dispositivos. Tokens de acesso anteriores da mesma sessão também deixam de funcionar. Se o access token expirou, renove antes de fazer logout. A exclusão da conta remove suas sessões por cascade. A validação de cada JWT consulta o banco, portanto requer disponibilidade do PostgreSQL.
+
+**Compatibilidade:** JWTs emitidos antes desta alteração não têm sessão associada e serão recusados. Faça login novamente após atualizar. Erros de sessão no filtro de segurança retornam `401` pelo mecanismo Bearer do Spring; erros de refresh usam a exception customizada. Sessões expiradas/revogadas permanecem no banco até a exclusão da conta; limpeza periódica ainda não está implementada.
+
+`SessionIntegrationTests` cobre rotação, concorrência, expiração, logout, isolamento entre sessões e exclusão da conta. `AuthSessionServiceTest` valida os claims, os prazos e o armazenamento do hash.

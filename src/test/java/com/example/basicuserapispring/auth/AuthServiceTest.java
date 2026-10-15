@@ -4,8 +4,6 @@ import com.example.basicuserapispring.user.CreateUserRequest;
 import com.example.basicuserapispring.user.User;
 import com.example.basicuserapispring.user.UserRepository;
 import com.example.basicuserapispring.user.UserResponse;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,10 +13,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,14 +25,13 @@ import static org.mockito.Mockito.*;
 class AuthServiceTest {
     @Mock UserRepository users;
     @Mock PasswordEncoder passwords;
-    @Mock JwtEncoder tokens;
+    @Mock AuthSessionService sessions;
     private AuthService service;
-    private static final Duration TTL = Duration.ofMinutes(15);
 
     @BeforeEach
     void setUp() {
         when(passwords.encode("invalid-credentials-dummy-password")).thenReturn("dummy-hash");
-        service = new AuthService(users, passwords, tokens, TTL);
+        service = new AuthService(users, passwords, sessions);
     }
 
     @Test
@@ -60,7 +53,7 @@ class AuthServiceTest {
         assertThat(saved.getValue().getPasswordHash()).isEqualTo("encoded-password");
         assertThat(response).isEqualTo(new UserResponse(42L, "Patrick", "Pessanha",
                 "patrick@example.com", "+5511999999999"));
-        verifyNoInteractions(tokens);
+        verifyNoInteractions(sessions);
     }
 
     @Test
@@ -76,30 +69,18 @@ class AuthServiceTest {
 
         verify(users, never()).saveAndFlush(any());
         verify(passwords, never()).encode("password123");
-        verifyNoInteractions(tokens);
+        verifyNoInteractions(sessions);
     }
 
     @Test
-    void loginIssuesTokenWithUserIdIssuerAlgorithmAndConfiguredLifetime() {
+    void validCredentialsCreateSessionForAuthenticatedUser() {
         when(users.findByEmail("patrick@example.com")).thenReturn(Optional.of(user()));
         when(passwords.matches("password123", "stored-hash")).thenReturn(true);
-        when(tokens.encode(any())).thenReturn(Jwt.withTokenValue("signed-token")
-                .header("alg", "HS256").subject("42").build());
-        Instant before = Instant.now();
+        var expected = new LoginResponse("access", "Bearer", 900, "refresh", 604800);
+        when(sessions.create(42L)).thenReturn(expected);
 
-        LoginResponse response = service.login(new LoginRequest(" PATRICK@example.com ", "password123"));
-
-        Instant after = Instant.now();
-        var parameters = ArgumentCaptor.forClass(JwtEncoderParameters.class);
-        verify(tokens).encode(parameters.capture());
-        var claims = parameters.getValue().getClaims();
-        assertThat(parameters.getValue().getJwsHeader().getAlgorithm()).isEqualTo(MacAlgorithm.HS256);
-        assertThat(claims.getSubject()).isEqualTo("42");
-        assertThat(claims.getClaimAsString("iss")).isEqualTo("basic-user-api");
-        assertThat(claims.getIssuedAt()).isBetween(before, after);
-        assertThat(claims.getExpiresAt()).isEqualTo(claims.getIssuedAt().plus(TTL));
-        assertThat(claims.getClaims()).doesNotContainKeys("password", "passwordHash", "email");
-        assertThat(response).isEqualTo(new LoginResponse("signed-token", "Bearer", 900));
+        assertThat(service.login(new LoginRequest(" PATRICK@example.com ", "password123"))).isEqualTo(expected);
+        verify(sessions).create(42L);
     }
 
     @Test
@@ -110,7 +91,7 @@ class AuthServiceTest {
         assertUnauthorizedLogin("patrick@example.com");
 
         verify(passwords).matches("wrong", "stored-hash");
-        verifyNoInteractions(tokens);
+        verifyNoInteractions(sessions);
     }
 
     @Test
@@ -121,7 +102,7 @@ class AuthServiceTest {
         assertUnauthorizedLogin("missing@example.com");
 
         verify(passwords).matches("wrong", "dummy-hash");
-        verifyNoInteractions(tokens);
+        verifyNoInteractions(sessions);
     }
 
     @Test

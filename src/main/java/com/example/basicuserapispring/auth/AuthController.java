@@ -15,7 +15,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api")
 public class AuthController {
     private final AuthService auth;
-    public AuthController(AuthService auth) { this.auth = auth; }
+    private final AuthSessionService sessions;
+    public AuthController(AuthService auth, AuthSessionService sessions) {
+        this.auth = auth;
+        this.sessions = sessions;
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Rotate a refresh token and obtain new tokens")
+    public LoginResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return sessions.refresh(request.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "Revoke the current session", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<Void> logout(@Parameter(hidden = true) @AuthenticationPrincipal Jwt jwt) {
+        sessions.logout(jwt.getClaimAsString("sid"));
+        return ResponseEntity.noContent().build();
+    }
 
     @PostMapping("/users")
     @Operation(summary = "Register a user")
