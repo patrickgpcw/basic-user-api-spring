@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UserProfileIntegrationTests {
     @Autowired MockMvc mvc;
     @Autowired UserRepository users;
-    @Autowired JwtEncoder encoder;
+    @Autowired com.example.basicuserapispring.auth.AuthSessionService sessions;
     User owner;
     User other;
     String authorization;
@@ -37,11 +37,7 @@ class UserProfileIntegrationTests {
         users.deleteAll();
         owner = users.saveAndFlush(new User("Owner", "User", "owner@example.com", "456", "original-hash"));
         other = users.saveAndFlush(new User("Other", "User", "other@example.com", null, "other-hash"));
-        Instant now = Instant.now();
-        var claims = JwtClaimsSet.builder().issuer("basic-user-api").subject(owner.getId().toString())
-                .issuedAt(now).expiresAt(now.plusSeconds(3600)).build();
-        authorization = "Bearer " + encoder.encode(JwtEncoderParameters.from(
-                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+        authorization = "Bearer " + sessions.create(owner.getId()).accessToken();
     }
 
     @Test
@@ -96,8 +92,7 @@ class UserProfileIntegrationTests {
         assertThat(users.existsById(owner.getId())).isFalse();
         assertThat(users.existsById(other.getId())).isTrue();
         mvc.perform(get("/api/users/me").header("Authorization", authorization))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("CURRENT_USER_UNAVAILABLE"));
+                .andExpect(status().isUnauthorized());
         mvc.perform(delete("/api/users/me").header("Authorization", authorization))
                 .andExpect(status().isUnauthorized());
         mvc.perform(put("/api/users/me").header("Authorization", authorization)

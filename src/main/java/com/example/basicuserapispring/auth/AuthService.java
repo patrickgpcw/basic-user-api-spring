@@ -1,14 +1,9 @@
 package com.example.basicuserapispring.auth;
 
 import com.example.basicuserapispring.user.*;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Locale;
-import org.springframework.beans.factory.annotation.Value;
 import com.example.basicuserapispring.exception.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,16 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
     private final UserRepository users;
     private final PasswordEncoder passwords;
-    private final JwtEncoder tokens;
-    private final Duration ttl;
+    private final AuthSessionService sessions;
     private final String dummyHash;
 
-    public AuthService(UserRepository users, PasswordEncoder passwords, JwtEncoder tokens,
-                       @Value("${security.jwt.ttl}") Duration ttl) {
+    public AuthService(UserRepository users, PasswordEncoder passwords, AuthSessionService sessions) {
         this.users = users;
         this.passwords = passwords;
-        this.tokens = tokens;
-        this.ttl = ttl;
+        this.sessions = sessions;
         this.dummyHash = passwords.encode("invalid-credentials-dummy-password");
     }
 
@@ -40,19 +32,14 @@ public class AuthService {
         return UserResponse.from(users.saveAndFlush(user));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponse login(LoginRequest request) {
         User user = users.findByEmail(normalize(request.email())).orElse(null);
         boolean matches = passwords.matches(request.password(), user == null ? dummyHash : user.getPasswordHash());
         if (!matches || user == null) {
             throw new InvalidCredentialsException();
         }
-        Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder().issuer("basic-user-api")
-                .subject(user.getId().toString()).issuedAt(now).expiresAt(now.plus(ttl)).build();
-        String token = tokens.encode(JwtEncoderParameters.from(
-                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
-        return new LoginResponse(token, "Bearer", ttl.toSeconds());
+        return sessions.create(user.getId());
     }
 
     @Transactional(readOnly = true)
