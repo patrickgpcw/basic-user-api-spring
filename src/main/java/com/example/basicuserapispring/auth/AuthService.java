@@ -5,13 +5,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import com.example.basicuserapispring.exception.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
@@ -34,7 +33,7 @@ public class AuthService {
     public UserResponse register(CreateUserRequest request) {
         String email = normalize(request.email());
         if (users.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
+            throw new EmailAlreadyRegisteredException();
         }
         User user = new User(request.firstName().trim(), request.lastName().trim(), email,
                 request.telephone(), passwords.encode(request.password()));
@@ -46,7 +45,7 @@ public class AuthService {
         User user = users.findByEmail(normalize(request.email())).orElse(null);
         boolean matches = passwords.matches(request.password(), user == null ? dummyHash : user.getPasswordHash());
         if (!matches || user == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+            throw new InvalidCredentialsException();
         }
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder().issuer("basic-user-api")
@@ -59,7 +58,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public UserResponse currentUser(String subject) {
         return users.findById(Long.valueOf(subject)).map(UserResponse::from)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User no longer exists"));
+                .orElseThrow(() -> new CurrentUserUnavailableException());
     }
 
     private String normalize(String email) { return email.trim().toLowerCase(Locale.ROOT); }
