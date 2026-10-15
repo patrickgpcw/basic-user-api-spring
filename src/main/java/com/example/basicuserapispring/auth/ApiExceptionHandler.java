@@ -1,6 +1,8 @@
 package com.example.basicuserapispring.auth;
 
 import com.example.basicuserapispring.exception.ApiException;
+import com.example.basicuserapispring.exception.LoginRateLimitException;
+import org.springframework.http.ResponseEntity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -10,6 +12,16 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(LoginRateLimitException.class)
+    ResponseEntity<ProblemDetail> loginRateLimit(LoginRateLimitException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason());
+        problem.setProperty("code", exception.getCode());
+        problem.setProperty("retryAfterSeconds", exception.getRetryAfterSeconds());
+        return ResponseEntity.status(exception.getStatusCode())
+                .header("Retry-After", Long.toString(exception.getRetryAfterSeconds()))
+                .body(problem);
+    }
+
     @ExceptionHandler(ApiException.class)
     ProblemDetail business(ApiException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason());
