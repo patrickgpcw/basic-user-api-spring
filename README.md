@@ -108,7 +108,7 @@ Para executar apenas os testes unitários:
 
 O relatório HTML fica em `build/reports/tests/test/index.html`.
 
-Os testes de integração ativam explicitamente o profile `test`, com H2 em memória no modo PostgreSQL, executando as mesmas migrations. Não precisam de Docker nem de variáveis locais. H2 é dependência exclusiva de testes; diferenças específicas do PostgreSQL devem ser validadas no banco real.
+Os testes de integração ativam explicitamente o profile `test`, com H2 em memória no modo PostgreSQL, executando as mesmas migrations. Não precisam de Docker nem de variáveis locais. H2 é dependência exclusiva de testes. A suíte `postgresTest` valida os comportamentos específicos do PostgreSQL no banco real.
 
 ## Atualizar ou excluir a própria conta
 
@@ -171,3 +171,24 @@ O Docker Compose encaminha essas variáveis do `.env`. Os contadores são sincro
 O IP vem da conexão (`remoteAddr`); `X-Forwarded-For` e `Forwarded` não são confiados (`server.forward-headers-strategy=none`). Atrás de proxy ou NAT, clientes podem compartilhar o mesmo limite. Antes de usar proxy reverso, configure explicitamente uma política de proxies confiáveis. O limite por e-mail também pode temporariamente afetar o titular de uma conta alvo de tentativas de terceiros.
 
 A proteção é restrita ao login; cadastro e refresh não ganham limites nesta etapa. `LoginRateLimiterTest` cobre expiração sem sleeps, concorrência, normalização e capacidade. `LoginRateLimitIntegrationTests` valida HTTP 429, headers, JSON inválido, isolamento e verificação da senha apenas dentro do limite.
+
+## Testes com PostgreSQL e Testcontainers
+
+A suíte separada `src/postgresTest` usa [Testcontainers](https://java.testcontainers.org/modules/databases/postgres/) para iniciar `postgres:17-alpine`, a mesma versão principal do Compose. Requer Docker ativo e acesso ao registry para baixar imagens na primeira execução.
+
+```sh
+# Testes rápidos com H2 e mocks: não precisam de Docker
+./gradlew test
+
+# Testes de integração com PostgreSQL real
+./gradlew postgresTest
+
+# Executar as duas suítes
+./gradlew test postgresTest
+```
+
+`postgresTest` usa porta aleatória, credenciais exclusivas de teste e banco descartável. Não lê `.env`, não usa o volume do Compose e pode rodar junto com o ambiente de desenvolvimento. Testcontainers inicia e remove o container automaticamente. H2 é excluído do classpath dessa suíte; as propriedades da conexão vêm do container via `DynamicPropertySource`.
+
+O profile `postgres-test` mantém Flyway habilitado e `ddl-auto=validate`: são executadas as migrations reais da aplicação, sem criação automática de schema pelo Hibernate. Os testes validam banco/versão, migrations, unicidade do e-mail, chave estrangeira, cascade de exclusão das sessões, UUID, precisão do timestamp, fluxo HTTP e renovação concorrente do refresh token.
+
+Relatório: `build/reports/tests/postgresTest/index.html`. Se Docker estiver indisponível, a suíte falha em vez de ignorar testes. `test`, `check` e `build` continuam sem exigir Docker; execute `postgresTest` explicitamente para a validação completa. A configuração do CI será feita no próximo tópico.

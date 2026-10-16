@@ -18,6 +18,19 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    postgresTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+configurations {
+    postgresTestImplementation.extendsFrom testImplementation
+    postgresTestRuntimeOnly.extendsFrom testRuntimeOnly, runtimeOnly
+    postgresTestRuntimeClasspath.exclude group: 'com.h2database', module: 'h2'
+}
+
 dependencies {
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
@@ -35,6 +48,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-flyway-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    postgresTestImplementation 'org.testcontainers:testcontainers-postgresql'
+    postgresTestImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
@@ -46,4 +61,14 @@ tasks.named('test') {
 
 tasks.named('bootJar') {
     archiveFileName = 'app.jar'
+}
+
+// Explicit opt-in: ordinary test/check/build remain usable without Docker.
+tasks.register('postgresTest', Test) {
+    description = 'Runs integration tests against a disposable PostgreSQL container (requires Docker).'
+    group = 'verification'
+    testClassesDirs = sourceSets.postgresTest.output.classesDirs
+    classpath = sourceSets.postgresTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter tasks.named('test')
 }
