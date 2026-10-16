@@ -191,4 +191,17 @@ A suíte separada `src/postgresTest` usa [Testcontainers](https://java.testconta
 
 O profile `postgres-test` mantém Flyway habilitado e `ddl-auto=validate`: são executadas as migrations reais da aplicação, sem criação automática de schema pelo Hibernate. Os testes validam banco/versão, migrations, unicidade do e-mail, chave estrangeira, cascade de exclusão das sessões, UUID, precisão do timestamp, fluxo HTTP e renovação concorrente do refresh token.
 
-Relatório: `build/reports/tests/postgresTest/index.html`. Se Docker estiver indisponível, a suíte falha em vez de ignorar testes. `test`, `check` e `build` continuam sem exigir Docker; execute `postgresTest` explicitamente para a validação completa. A configuração do CI será feita no próximo tópico.
+Relatório: `build/reports/tests/postgresTest/index.html`. Se Docker estiver indisponível, a suíte falha em vez de ignorar testes. `test`, `check` e `build` continuam sem exigir Docker; execute `postgresTest` explicitamente para a validação completa. O CI executa explicitamente as duas suítes a cada push e pull request para main.
+
+## CI — GitHub Actions
+
+O workflow `.github/workflows/ci.yml` executa em pushes, pull requests para `main` e manualmente pela aba Actions (após estar na branch padrão).
+
+1. **Tests and JAR**: runner Ubuntu 24.04, Temurin Java 25 e cache das dependências Gradle. Executa `./gradlew test postgresTest bootJar --no-daemon --stacktrace --continue`. Testcontainers usa o Docker do runner para subir o PostgreSQL descartável, sem precisar de secrets ou serviços de banco configurados no GitHub.
+2. **Docker image build**: após sucesso do primeiro job, constrói o Dockerfile completo. Não envia a imagem para registry e não realiza deploy.
+
+Relatórios HTML e XML ficam no artefato `test-reports`, inclusive quando os testes falham. O JAR é disponibilizado como `application-jar` apenas quando o job passa. Os artefatos são retidos por sete dias. Jobs têm timeout de 20 minutos e novas execuções cancelam a anterior da mesma referência Git. Push e PR têm referências distintas e podem gerar duas execuções para a mesma branch.
+
+As actions oficiais estão fixadas por SHA e o token do workflow tem apenas `contents: read`. A execução não usa `.env` nem credenciais do ambiente de desenvolvimento. O CI testa Linux x64; o teste local em macOS não substitui a primeira execução no GitHub.
+
+Para exigir CI antes do merge, configure uma regra de proteção da `main` com os checks **Tests and JAR** e **Docker image build**. A inclusão do workflow por si só não modifica regras de proteção do repositório.
