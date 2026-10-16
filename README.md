@@ -150,3 +150,24 @@ Logout retorna `204` e afeta apenas a sessão indicada pelo JWT, preservando log
 **Compatibilidade:** JWTs emitidos antes desta alteração não têm sessão associada e serão recusados. Faça login novamente após atualizar. Erros de sessão no filtro de segurança retornam `401` pelo mecanismo Bearer do Spring; erros de refresh usam a exception customizada. Sessões expiradas/revogadas permanecem no banco até a exclusão da conta; limpeza periódica ainda não está implementada.
 
 `SessionIntegrationTests` cobre rotação, concorrência, expiração, logout, isolamento entre sessões e exclusão da conta. `AuthSessionServiceTest` valida os claims, os prazos e o armazenamento do hash.
+
+## Proteção contra tentativas de login
+
+`POST /api/login` permite por padrão 30 requisições por IP e 5 tentativas por e-mail em uma janela fixa de um minuto, iniciada na primeira tentativa. A comparação de e-mail ignora maiúsculas e espaços nas extremidades. Contas existentes e inexistentes seguem a mesma regra, sem consulta prévia ao cadastro.
+
+Todas as tentativas contam, inclusive logins bem-sucedidos. JSON malformado e falhas de validação também consomem o limite por IP. O limite por e-mail é aplicado após validar o DTO e antes de verificar a senha. Requisições bloqueadas não prolongam a janela que as bloqueou.
+
+Ao atingir um limite, a API retorna `429`, o header `Retry-After` em segundos e Problem Details com `code: LOGIN_RATE_LIMITED` e `retryAfterSeconds`. O cliente deve aguardar antes de tentar novamente.
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `LOGIN_IP_LIMIT` | 30 | Requisições por IP em cada janela |
+| `LOGIN_ACCOUNT_LIMIT` | 5 | Tentativas por e-mail em cada janela |
+| `LOGIN_WINDOW` | `PT1M` | Duração ISO-8601 da janela (mínimo de um segundo) |
+| `LOGIN_MAX_ENTRIES` | 10000 | Capacidade total de contadores de IP e conta |
+
+O Docker Compose encaminha essas variáveis do `.env`. Os contadores são sincronizados e ficam em memória, por instância, sendo reiniciados com a aplicação. Para múltiplas réplicas será necessário um armazenamento compartilhado, como Redis. Ao atingir a capacidade, entradas expiradas são removidas; novas origens são bloqueadas temporariamente quando só restam contadores ativos, sem descartar bloqueios existentes.
+
+O IP vem da conexão (`remoteAddr`); `X-Forwarded-For` e `Forwarded` não são confiados (`server.forward-headers-strategy=none`). Atrás de proxy ou NAT, clientes podem compartilhar o mesmo limite. Antes de usar proxy reverso, configure explicitamente uma política de proxies confiáveis. O limite por e-mail também pode temporariamente afetar o titular de uma conta alvo de tentativas de terceiros.
+
+A proteção é restrita ao login; cadastro e refresh não ganham limites nesta etapa. `LoginRateLimiterTest` cobre expiração sem sleeps, concorrência, normalização e capacidade. `LoginRateLimitIntegrationTests` valida HTTP 429, headers, JSON inválido, isolamento e verificação da senha apenas dentro do limite.

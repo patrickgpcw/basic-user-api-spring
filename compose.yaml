@@ -8,6 +8,10 @@ services:
       DB_USERNAME: ${DB_USERNAME:-basic_user}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      LOGIN_IP_LIMIT: ${LOGIN_IP_LIMIT:-30}
+      LOGIN_ACCOUNT_LIMIT: ${LOGIN_ACCOUNT_LIMIT:-5}
+      LOGIN_WINDOW: ${LOGIN_WINDOW:-PT1M}
+      LOGIN_MAX_ENTRIES: ${LOGIN_MAX_ENTRIES:-10000}
     depends_on:
       postgres:
         condition: service_healthy

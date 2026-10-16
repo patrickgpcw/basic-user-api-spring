@@ -16,9 +16,11 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
     private final AuthService auth;
     private final AuthSessionService sessions;
-    public AuthController(AuthService auth, AuthSessionService sessions) {
+    private final LoginRateLimiter loginRateLimiter;
+    public AuthController(AuthService auth, AuthSessionService sessions, LoginRateLimiter loginRateLimiter) {
         this.auth = auth;
         this.sessions = sessions;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @PostMapping("/refresh")
@@ -42,7 +44,12 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(summary = "Log in and obtain an access token")
-    public LoginResponse login(@Valid @RequestBody LoginRequest request) { return auth.login(request); }
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429",
+            description = "Too many login attempts. Retry-After indicates the wait in seconds.")
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+        loginRateLimiter.checkAccount(request.email());
+        return auth.login(request);
+    }
 
     @GetMapping("/users/me")
     @Operation(summary = "Get the authenticated user", security = @SecurityRequirement(name = "bearerAuth"))
